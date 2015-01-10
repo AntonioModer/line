@@ -1,0 +1,22 @@
+0.0.1
+====
+Added:
+----
+- liar.newSystem
+- liar.addMethod
+
+Changed:
+----
+
+Fixed:
+----
+
+Removed:
+----
+
+To-Do:
+----
+- Implement collisions
+- Make specs
+- Make README
+- Implement basic collision repsonse.
