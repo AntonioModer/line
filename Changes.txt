@@ -1,3 +1,23 @@
+0.2.0
+====
+Added:
+----
+
+Removed:
+----
+
+Changed:
+----
+- liar.newSystem: 	Changed first argument to look trough table to use table objects.
+
+Fixed:
+----
+
+To-Do:
+----
+- Add segments as well.
+- Update segment points.
+
 0.0.1
 ====
 Added:

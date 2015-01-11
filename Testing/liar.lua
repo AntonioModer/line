@@ -364,7 +364,7 @@ local searchModes = {
 		if tab.x and tab.y then
 			if tab.r then
 				return function( tab ) return tab.x, tab.y, tab.r end, 'circle'
-			elseif tab.radius
+			elseif tab.radius then
 				return function( tab ) return tab.x, tab.y, tab.radius end, 'circle'
 			end
 		elseif tab.points then
@@ -407,6 +407,9 @@ local searchModes = {
 -- Contains all of the objects registered.
 local registry = {}
 
+-- Contains all of the movement line segments. Erased each frame.
+local movementSegments = {}
+
 ------------------- Creators -------------------
 
 -- Description: 	Adds a new method to the modes table.
@@ -444,27 +447,52 @@ end
 -- 		mode		string		The method name used in `addNewMethod`.
 -- Returns:
 -- 		structure	table		The data returned by the method creator.
-local function newSystem( points, mode, serach, ... )
+local function newSystem( points, mode, search, ... )
 	mode = mode or 'centroid'
 	assert( modes[mode], 'Liar Error: Mode \'' .. mode .. '\' not registered.' )
 	
 	search = search or 'default'
-	assert( searchModes[search], 'Liar Error: Search mode \'' .. serach .. '\' not registered.' )
+	assert( searchModes[search], 'Liar Error: Search mode \'' .. search .. '\' not registered.' )
 	
-	local pointsToUpdate = modes[mode]( points )
-	local getInformationFunc, _type = searchMode[search]( points )
-	
+	local getInformationFunc, _type = searchModes[search]( points )
 	assert( getInformationFunc, 'Liar Error: Search mode \'' .. search .. '\' failed to find any data. Make sure you have formatted your data correctly.' )
+	
+	local pointsToUpdate
+	if _type == 'polygon' then
+		pointsToUpdate = modes[mode]( getInformationFunc( points ), _type ) -- This way I don't need to create tables for all items, just polygon. 
+	else
+		pointsToUpdate = modes[mode]( { getInformationFunc( points ) }, _type )
+	end
+	
 	local id = getGreatestIndex( registry ) + 1
 	
-	tab.__liar = {
+	points.__liar = {
 		points = pointsToUpdate, 
 		getInformation = getInformationFunc, 
 		type = _type, 
 		onCollision = function() end, 
 		id = id, 
+		intersections = {}, 
+		active = true, 
 	}
+	registry[id] = points
+	
 	return id
+end
+
+local function moveTo( points, distanceX, distanceY )
+	assert( points.__liar, 'Liar Error: Attempt to move object not registered.' )
+	local index = #movementSegments + 1
+	movementSegments[index] = { id = points.__liar.id }
+	
+	local length = 0
+	for i = 1, #points.__liar.points, 2 do
+		length = length + 1
+		local currentX, currentY = points.__liar.points[i], points.__liar.points[i + 1]
+		local futureX, futureY = currentX + distanceX, currentY + distanceY
+		
+		movementSegments[index][length] = { currentX, currentY, futureX, futureY }
+	end
 end
 
 -------------- Registry Functions --------------
@@ -609,6 +637,106 @@ local function checkSegmentPoint( px, py, x1, y1, x2, y2 )
 	return false
 end
 
+-- Description: 	Gives the point of intersection between two line segments.
+-- Parameters: 
+-- 		x1			number		First x-coordinate of the first line segment.
+-- 		y1			number		First y-coordinate of the first line segment.
+-- 		x2			number		Second x-coordinate of the first line segment.
+-- 		y2			number		Second y-coordinate of the first line segment.
+-- 		x3			number		First x-coordinate of the second line segment.
+-- 		y3			number		First y-coordinate of the second line segment.
+-- 		x4			number		Second x-coordinate of the second line segment.
+-- 		y4			number		Second y-coordinate of the second line segment.
+-- Returns: 
+-- 		x1			
+-- 					number			First x-coordinate of the intersection.
+-- 					boolean (false)	If the line segments don't intersect.
+-- 		y1			number			First y-coordinate of the first line segment.
+-- 					number			First y-coordinate of the first line segment.
+-- 					boolean (nil)	If the line segments don't intersect.
+-- 		x2			
+-- 					number			Second x-coordinate of the intersection (collinear lines).
+-- 					boolean (nil)	Line segments don't intersect.
+-- 		y2 			
+-- 					number			Second y-coordinate of the intersection (collinear lines).
+-- 					boolean (nil)	Line segments don't intersect.
+local function getSegmentSegmentIntersection( x1, y1, x2, y2, x3, y3, x4, y4 )
+	local slope1, intercept1 = getSlope( x1, y1, x2, y2 ), getIntercept( x1, y1, x2, y2 )
+	local slope2, intercept2 = getSlope( x3, y3, x4, y4 ), getIntercept( x3, y3, x4, y4 )
+	
+	-- Add points to the table.
+	local function addPoints( tab, x, y )
+		tab[#tab + 1] = x
+		tab[#tab + 1] = y
+	end
+	
+	local function removeDuplicatePairs( tab )
+		for i = #tab - 1, 1, -2 do
+			local x1, y1 = tab[i], tab[i + 1]
+			for ii = #tab - 1, 1, -2 do 
+				local x2, y2 = tab[ii], tab[ii + 1]
+				if i ~= ii then
+					if checkFuzzy( x1, x2 ) and checkFuzzy( y1, y2 ) then
+						table.remove( tab, i )
+						table.remove( tab, i )
+					end
+				end
+			end
+		end
+		return tab
+	end
+	
+	if slope1 == slope2 then -- Parallel lines
+		if intercept1 == intercept2 then -- The same lines, possibly in different points. 
+			local points = {}
+			if checkSegmentPoint( x1, y1, x3, y3, x4, y4 ) then addPoints( points, x1, y1 ) end
+			if checkSegmentPoint( x2, y2, x3, y3, x4, y4 ) then addPoints( points, x2, y2 ) end
+			if checkSegmentPoint( x3, y3, x1, y1, x2, y2 ) then addPoints( points, x3, y3 ) end
+			if checkSegmentPoint( x4, y4, x1, y1, x2, y2 ) then addPoints( points, x4, y4 ) end
+			
+			points = removeDuplicatePairs( points )
+			if #points == 0 then return false end
+			return unpack( points )
+		else
+			return false
+		end
+	end	
+
+	local x, y = getLineLineIntersection( x1, y1, x2, y2, x3, y3, x4, y4 )
+	if x and checkSegmentPoint( x, y, x1, y1, x2, y2 ) and checkSegmentPoint( x, y, x3, y3, x4, y4 ) then
+		return x, y
+	end
+	
+	return false
+end
+
+-------------------- Update --------------------
+
+local function update()
+	-- First, check segment against other movement segments.
+	for i1, container1 in pairs( movementSegments ) do
+		registry[container1.id].intersections = {}
+		for i2, container in pairs( movementSegments ) do
+			if i1 ~= i2 and registry[container1.id].active and registry[container2.id].active then
+				for _, segment1 in ipairs( container1 ) do
+					for _, segment2 in ipairs( container2 ) do
+						local x1, y1, x2, y2 = unpack( segment1 )
+						local x3, y3, x4, y4 = unpack( segment2 )
+						if getSegmentSegmentIntersection( x1, y1, x2, y2, x3, y3, x4, y4 ) then
+							local register1 = registry[container1.id]
+							local register2 = registry[container2.id]
+							register1.intersections[#register1.intersections + 1] = container2.id
+							register2.intersectoins[#register2.intersections + 1] = container1.id
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	movementSegments = {}
+end
+
 return {
 	_VERSION = 'Liar 0.2.0', 
 	_DESCRIPTION = 'A fast and efficient collision method based on projecting line segments.', 
@@ -634,12 +762,15 @@ return {
 
 		Contact me at davisclaib@gmail.com
 	]], 
-	addNewMethod = addNewMethod, 
-	addNewSearchMode = addNewSearchMode, 
-	
 	register = newSystem, 
 	new = newSystem, 
 	
+	moveTo = moveTo,
+	update = update, 
+	
+	addNewMethod = addNewMethod, 
+	addNewSearchMode = addNewSearchMode, 
 	removeItem = removeItem, 
+	
 	clearRegistry = clearRegistry, 
 }
