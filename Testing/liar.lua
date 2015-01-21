@@ -637,6 +637,85 @@ local function checkSegmentPoint( px, py, x1, y1, x2, y2 )
 	return false
 end
 
+-- Gives the intersection of two lines.
+-- slope1, 	slope2, 		x1, 	y1, 		x2, y2
+-- slope1, 	intercept1, 	slope2, intercept2
+-- x1, 		y1, 			x2, 	y2, 		x3, y3, x4, y4
+local function getLineLineIntersection( ... )
+	local input = checkInput( ... )
+	local x1, y1, x2, y2, x3, y3, x4, y4
+	local slope1, intercept1
+	local slope2, intercept2
+	local x, y
+	
+	if #input == 4 then -- Given slope1, intercept1, slope2, intercept2. 
+		slope1, intercept1, slope2, intercept2 = unpack( input ) 
+		
+		-- Since these are lines, not segments, we can use arbitrary points, such as ( 1, y ), ( 2, y )
+		y1 = slope1 * 1 + intercept1
+		y2 = slope1 * 2 + intercept1
+		y3 = slope2 * 1 + intercept2
+		y4 = slope2 * 2 + intercept2
+		x1 = ( y1 - intercept1 ) / slope1
+		x2 = ( y2 - intercept1 ) / slope1
+		x3 = ( y3 - intercept1 ) / slope1
+		x4 = ( y4 - intercept1 ) / slope1
+	elseif #input == 6 then -- Given slope1, intercept1, and 2 points on the other line. 
+		slope1 = input[1]
+		intercept1 = input[2]
+		slope2 = getSlope( input[3], input[4], input[5], input[6] )
+		intercept2 =  getIntercept( input[3], input[4], input[5], input[6] )
+		
+		y1 = slope1 * 1 + intercept1
+		y2 = slope1 * 2 + intercept1
+		y3 = input[4]
+		y4 = input[6]
+		x1 = ( y1 - intercept1 ) / slope1
+		x2 = ( y2 - intercept1 ) / slope1
+		x3 = input[3]
+		x4 = input[5]
+	elseif #input == 8 then -- Given 2 points on line 1 and 2 points on line 2.
+		slope1 = getSlope( input[1], input[2], input[3], input[4] )
+		intercept1 = getIntercept( input[1], input[2], input[3], input[4] )
+		slope2 = getSlope( input[5], input[6], input[7], input[8] )
+		intercept2 = getIntercept( input[5], input[6], input[7], input[8] ) 
+		
+		x1, y1, x2, y2, x3, y3, x4, y4 = unpack( input )
+	end
+	
+	if not slope1 and not slope2 then -- Both are vertical lines
+		if x1 == x3 then -- Have to have the same x and y positions to intersect
+			return true
+		else
+			return false
+		end
+	elseif not slope1 then -- First is vertical
+		x = x1 -- They have to meet at this x, since it is this line's only x
+		y = slope2 * x + intercept2
+	elseif not slope2 then -- Second is vertical
+		x = x3 -- Vice-Versa
+		y = slope1 * x + intercept1
+	elseif checkFuzzy( slope1, slope2 ) then -- Parallel (not vertical)
+		if checkFuzzy( intercept1, intercept2 ) then -- Same intercept
+			return true
+		else
+			return false
+		end
+	else -- Regular lines
+		--   y = m1 * x + b1
+		-- - y = m2 * x + b2
+		--   ---------------
+		--   0 = x * ( m1 - m2 ) + ( b1 - b2 )
+		--  -( b1 - b2 ) = x * ( m1 - m2 )
+		--   x = ( -b1 + b2 ) / ( m1 - m2 )
+		
+		x = ( -intercept1 + intercept2 ) / ( slope1 - slope2 )
+		y = slope1 * x + intercept1
+	end
+	
+	return x, y
+end
+
 -- Description: 	Gives the point of intersection between two line segments.
 -- Parameters: 
 -- 		x1			number		First x-coordinate of the first line segment.
@@ -713,18 +792,23 @@ end
 -------------------- Update --------------------
 
 local function update()
-	-- First, check segment against other movement segments.
+	for index, value in ipairs( registry ) do
+		value.__liar.points = value.__liar.getInformation( registry[index] )
+	end
+	
 	for i1, container1 in pairs( movementSegments ) do
 		registry[container1.id].intersections = {}
-		for i2, container in pairs( movementSegments ) do
-			if i1 ~= i2 and registry[container1.id].active and registry[container2.id].active then
+		local register1 = registry[container1.id]
+		
+		for i2, container2 in pairs( movementSegments ) do
+			local register2 = registry[container2.id]
+			
+			if i1 ~= i2 and registry[container1.id].__liar.active and registry[container2.id].__liar.active then
 				for _, segment1 in ipairs( container1 ) do
 					for _, segment2 in ipairs( container2 ) do
 						local x1, y1, x2, y2 = unpack( segment1 )
 						local x3, y3, x4, y4 = unpack( segment2 )
 						if getSegmentSegmentIntersection( x1, y1, x2, y2, x3, y3, x4, y4 ) then
-							local register1 = registry[container1.id]
-							local register2 = registry[container2.id]
 							register1.intersections[#register1.intersections + 1] = container2.id
 							register2.intersectoins[#register2.intersections + 1] = container1.id
 						end
@@ -732,13 +816,19 @@ local function update()
 				end
 			end
 		end
+		if #register1.intersections > 0 then
+			print'Intersection'
+		end
 	end
 	
+	for index, value in ipairs( registry ) do
+		value.__liar.points = value.__liar.getInformation( registry[index] )
+	end
 	movementSegments = {}
 end
 
 return {
-	_VERSION = 'Liar 0.2.0', 
+	_VERSION = 'Liar 0.2.1', 
 	_DESCRIPTION = 'A fast and efficient collision method based on projecting line segments.', 
 	_URL = 'https://github.com/davisdude/line', 
 	_LICENSE = [[

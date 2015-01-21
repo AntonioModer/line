@@ -14,9 +14,11 @@ local function draw( self )
 	love.graphics.setColor( 125, 125, 125, 255 )
 	love.graphics.rectangle( 'line', self.x, self.y, self.width, self.height )
 	
-	love.graphics.setColor( 0, 255, 255, 255 )
 	for i = 1, #self.__liar.points, 2 do
+		love.graphics.setColor( 0, 255, 255, 255 )
 		love.graphics.circle( 'fill', self.__liar.points[i], self.__liar.points[i + 1], 2 )
+		love.graphics.setColor( 255, 255, 255, 255 )
+		love.graphics.print( self.__liar.points[i] .. ', ' .. self.__liar.points[i + 1], self.__liar.points[i], 32 + self.__liar.points[i + 1] )
 	end
 end
 
